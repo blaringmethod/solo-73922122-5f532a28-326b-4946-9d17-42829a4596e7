@@ -1,5 +1,6 @@
 -- 检验数仓报告表与索引构建轮次表
 -- 幂等脚本，容器首次启动时由 PostgreSQL 自动执行（/docker-entrypoint-initdb.d）。
+-- 测值修订相关表见 04_revisions.sql。
 
 BEGIN;
 
@@ -8,7 +9,7 @@ CREATE TABLE IF NOT EXISTS reports (
     id           BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,  -- 主键流水号
     lab_no       TEXT NOT NULL,                                     -- 实验室号（非空）
     report_no    TEXT NOT NULL,                                     -- 实验室内报告号（非空）
-    measured     INTEGER NOT NULL,                                  -- 整数测值
+    measured     INTEGER NOT NULL,                                  -- 当前已生效的整数测值
     created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -16,7 +17,7 @@ COMMENT ON TABLE  reports            IS '持续补录的检验报告表';
 COMMENT ON COLUMN reports.id         IS '主键流水号';
 COMMENT ON COLUMN reports.lab_no     IS '实验室号';
 COMMENT ON COLUMN reports.report_no  IS '实验室内报告号';
-COMMENT ON COLUMN reports.measured   IS '整数测值';
+COMMENT ON COLUMN reports.measured   IS '当前已生效的整数测值（缺口后的待补修订不会写入此处）';
 
 -- 补录期间的普通辅助索引（非唯一），仅用于按实验室号/报告号查询与去重；
 -- 唯一索引构建成功前，唯一性由补录 SQL 自行保证。

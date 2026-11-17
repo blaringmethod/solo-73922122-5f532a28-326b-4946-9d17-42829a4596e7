@@ -33,3 +33,8 @@ wait_status() {
 }
 
 psql_exec() { "${PSQL[@]}" "$@"; }
+
+# 取最后插入的报告主键（演示脚本均为单进程串行，安全）。
+last_report_id() {
+  psql_exec -tA -c "SELECT id FROM reports ORDER BY id DESC LIMIT 1;"
+}

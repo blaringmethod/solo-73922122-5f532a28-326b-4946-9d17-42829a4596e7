@@ -42,9 +42,13 @@ def client(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", test_url)
     # settings 是 frozen dataclass，直接改对象属性。
     object.__setattr__(settings, "database_url", test_url)
+    # 测试环境进程数受限（沙箱 cgroup pids）：用小连接池，避免并发用例耗尽 fork 配额。
+    object.__setattr__(settings, "pool_min_size", 1)
+    object.__setattr__(settings, "pool_max_size", 4)
     dbmod.close_pool()
     dbmod.init_pool()
     dbmod.ensure_schema()
+
     # 复位服务内线程状态。
     with service._lock:
         service._thread = None

@@ -13,6 +13,9 @@ from .config import settings
 _pool: ConnectionPool | None = None
 
 SCHEMA_FILE = pathlib.Path(__file__).resolve().parent.parent / "sql" / "01_schema.sql"
+REVISIONS_SCHEMA_FILE = (
+    pathlib.Path(__file__).resolve().parent.parent / "sql" / "04_revisions.sql"
+)
 
 
 def init_pool() -> None:
@@ -20,8 +23,9 @@ def init_pool() -> None:
     if _pool is None:
         _pool = ConnectionPool(
             settings.database_url,
-            min_size=2,
-            max_size=10,
+            min_size=settings.pool_min_size,
+            max_size=settings.pool_max_size,
+            timeout=settings.pool_timeout_s,
             kwargs={"row_factory": dict_row},
             open=True,
         )
@@ -41,12 +45,44 @@ def close_pool() -> None:
         _pool = None
 
 
+def _run_ddl(conn: psycopg.Connection, path: pathlib.Path) -> None:
+    """执行含显式 BEGIN/COMMIT 的 DDL 脚本。
+
+    连接置为 autocommit，让脚本自身的 BEGIN/COMMIT 生效，
+    避免在 psycopg 隐式事务里再开事务（会产生 “already a transaction” 警告）。
+    """
+    if conn.info.transaction_status != psycopg.pq.TransactionStatus.IDLE:
+        conn.commit()
+    conn.autocommit = True
+    try:
+        conn.execute(path.read_text(encoding="utf-8"))
+    finally:
+        conn.autocommit = False
+
+
 def ensure_schema() -> None:
     """幂等建表（容器首次启动由 initdb 执行，这里保证本地/非容器环境同样可用）。"""
-    ddl = SCHEMA_FILE.read_text(encoding="utf-8")
     with pool().connection() as conn:
-        conn.execute(ddl)
-        conn.commit()
+        for path in (SCHEMA_FILE, REVISIONS_SCHEMA_FILE):
+            _run_ddl(conn, path)
+
+
+def ensure_revision_schema() -> None:
+    """仅在修订表/生效列缺失时执行迁移 DDL，避免每次启动都申请表级锁。"""
+    with pool().connection() as conn:
+        ready = conn.execute(
+            "SELECT to_regclass('public.reports') IS NOT NULL AS has_reports, "
+            "to_regclass('public.report_revisions') IS NOT NULL AS has_table, "
+            "(SELECT count(*) FROM information_schema.columns "
+            " WHERE table_schema = 'public' AND table_name = 'reports' "
+            "   AND column_name = 'effective_revision') > 0 AS has_column"
+        ).fetchone()
+    if not ready["has_reports"]:
+        ensure_schema()
+        return
+    if not (ready["has_table"] and ready["has_column"]):
+        with pool().connection() as conn:
+            _run_ddl(conn, REVISIONS_SCHEMA_FILE)
 
 
 # ----------------------------- 索引状态 ---------------------------------

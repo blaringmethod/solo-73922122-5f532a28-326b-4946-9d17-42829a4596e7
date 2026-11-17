@@ -40,7 +40,7 @@ stop_api() {
 
 echo "== 1. 清理并准备无重复数据 =="
 psql_exec -c "DROP INDEX IF EXISTS uq_reports_lab_no_report_no;" \
-          -c "TRUNCATE reports RESTART IDENTITY;" \
+          -c "TRUNCATE reports RESTART IDENTITY CASCADE;" \
           -c "DELETE FROM index_build_rounds;" >/dev/null
 psql_exec -c "INSERT INTO reports(lab_no,report_no,measured)
               SELECT 'LAB','R-'||g, g FROM generate_series(1,50) g;"

@@ -9,8 +9,9 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
-      # 首次初始化自动建表（幂等）
+      # 首次初始化自动建表（幂等，按文件名顺序执行）
       - ./sql/01_schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+      - ./sql/04_revisions.sql:/docker-entrypoint-initdb.d/04_revisions.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d report_warehouse"]
       interval: 5s
@@ -28,6 +29,11 @@ services:
       RECONCILE_INTERVAL_S: "1.5"
     ports:
       - "8000:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health', timeout=3).status==200 else 1)\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 volumes:
   pgdata:
